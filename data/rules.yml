@@ -1,0 +1,25 @@
+version: "3.1"
+
+rules:
+
+- rule: Say goodbye anytime the user says goodbye
+  steps:
+  - intent: goodbye
+  - action: utter_goodbye
+
+- rule: Say 'I am a bot' anytime the user challenges
+  steps:
+  - intent: bot_challenge
+  - action: utter_iamabot
+  
+- rule: Open the required app
+  steps:
+  - intent: open_app
+  - action: action_open_app
+
+
+- rule: Search the web when fallback is triggered
+  steps:
+  - intent: ask_general_question
+  - action: action_web_search
+

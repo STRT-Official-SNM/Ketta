@@ -1,0 +1,270 @@
+version: "3.1"
+
+nlu:
+  - intent: greet
+    examples: |
+      - hey
+      - hello
+      - hi
+      - good morning
+
+  - intent: goodbye
+    examples: |
+      - cu
+      - good by
+      - bye
+      - see you later
+
+  - intent: affirm
+    examples: |
+      - yes
+      - y
+      - sure
+      - absolutely
+
+  - intent: deny
+    examples: |
+      - no
+      - n
+      - nope
+
+  - intent: mood_great
+    examples: |
+      - perfect
+      - great
+      - amazing
+      - feeling awesome
+
+  - intent: mood_unhappy
+    examples: |
+      - my day was horrible
+      - I am sad
+      - I feel terrible
+      - not good
+
+  - intent: bot_challenge
+    examples: |
+      - are you a bot?
+      - are you a human?
+      - who made you?
+      - what are you?
+      
+      
+  - intent: ask_general_question
+    examples: |
+      - What is [artificial intelligence](search_query)?
+      - What's the [capital of France](search_query)?
+      - What are the [symptoms of COVID-19](search_query)?
+      - What is the [largest country in the world](search_query)?
+      - What is the [meaning of life](search_query)?
+      - [artificial intelligence](search_query)
+      - [capital of France](search_query)
+      - [largest country](search_query)
+      - [symptoms of COVID-19](search_query)
+      - [tallest building](search_query)
+      - [fastest animal](search_query)
+      - [population of India](search_query)
+      - Who is the [CEO of Tesla](search_query)?
+      - Who is the [president of USA](search_query)?
+      - Who [wrote Harry Potter](search_query)?
+      - Who [invented the telephone](search_query)?
+      - Who [won the Nobel Prize in Physics 2023](search_query)?
+      - [CEO of Tesla](search_query)
+      - [president of USA](search_query)
+      - [author of Harry Potter](search_query)
+      - [inventor of telephone](search_query)
+      - Who is [Marcus Aurelius](search_query)?
+      - Who was [Julius Caesar](search_query)?
+      - Who was [Leonardo da Vinci](search_query)?
+      - [Marcus Aurelius](search_query)
+      - [Julius Caesar](search_query)
+      - [Leonardo da Vinci](search_query)
+      - How [tall is Mount Everest](search_query)?
+      - How does [photosynthesis work](search_query)?
+      - How to [make pancakes](search_query)?
+      - How many [planets are in our solar system](search_query)?
+      - How far is the [moon from Earth](search_query)?
+      - [height of Mount Everest](search_query)
+      - [distance to moon](search_query)
+      - [planets in solar system](search_query)
+      - [pancake recipe](search_query)
+      - When was the [iPhone released](search_query)?
+      - When did [World War 2 end](search_query)?
+      - When is the [next solar eclipse](search_query)?
+      - When was the [internet invented](search_query)?
+      - [iPhone release date](search_query)
+      - [World War 2 end date](search_query)
+      - [next solar eclipse](search_query)
+      - [internet invention](search_query)
+      - Where is the [Great Barrier Reef](search_query)?
+      - Where can I find the [Eiffel Tower](search_query)?
+      - Where was [Albert Einstein born](search_query)?
+      - Where is [Mount Kilimanjaro located](search_query)?
+      - [location of Great Barrier Reef](search_query)
+      - [Eiffel Tower location](search_query)
+      - [birthplace of Albert Einstein](search_query)
+      - Why is the [sky blue](search_query)?
+      - Why do [leaves change color in fall](search_query)?
+      - Why do we [need to sleep](search_query)?
+      - [reasons for sky being blue](search_query)
+      - [why leaves change color](search_query)
+      - [importance of sleep](search_query)
+      - Tell me about [Python programming](search_query)
+      - Tell me about [climate change](search_query)
+      - I want to know about [quantum physics](search_query)
+      - Explain [blockchain technology](search_query)
+      - Information about [renewable energy](search_query)
+      - [Python programming](search_query)
+      - [climate change](search_query)
+      - [quantum physics](search_query)
+      - [blockchain technology](search_query)
+      - [renewable energy](search_query)
+
+
+  - intent: open_app
+    examples: |
+      - open [WhatsApp](app_name)
+      - launch [Chrome](app_name)
+      - start [Spotify](app_name)
+      - please open [Gmail](app_name)
+      - can you open [Settings](app_name)?
+      - open up [Telegram](app_name)
+      - run [VS Code](app_name)
+      - i want to open [Netflix](app_name)
+      - open [Figma](app_name)
+      - launch [Firefox](app_name)
+      - open [Google Chrome](app_name)
+      - please launch [Microsoft Word](app_name)
+      - can you start [the calculator](app_name)
+      - open [my default browser](app_name)
+      - launch [Adobe Photoshop](app_name)
+      - start [the terminal](app_name)
+      - open [file explorer](app_name)
+      - i need to open [paint](app_name)
+      - launch [Visual Studio Code](app_name)
+      - open [Microsoft Edge](app_name)
+      - open [File Manager](app_name)
+      - open [Adobe Acrobat](app_name)
+      - start [Steam](app_name)
+      - launch [Epic Games](app_name)
+      - run [Windows Media Player](app_name)
+      - open [Notion](app_name)
+      - open [XPlayer](app_name)
+      - launch [SmartEdit Pro](app_name)
+      - open [CustomApp123](app_name)
+      - start [MyBrowserX](app_name)
+      - open [UltraEdit](app_name)
+      - run [GameCenter](app_name)
+      - open [Brave Browser](app_name)
+      - open [Android Studio](app_name)
+      - launch [IntelliJ IDEA](app_name)
+      - open [Visual Studio](app_name)
+      - run [PyCharm](app_name)
+      - start [Code Runner](app_name)
+
+  - lookup: app_name
+    examples: |
+      - whatsapp
+      - spotify
+      - gmail
+      - telegram
+      - chrome
+      - firefox
+      - notepad
+      - brave browser
+      - vs code
+      - terminal
+      - settings
+      - calculator
+      - paint
+      - word
+      - excel
+      - powerpoint
+      - outlook
+      - discord
+      - slack
+      - zoom
+      - teams
+      - file explorer
+      - netflix
+      - figma
+      - gmail
+      - photoshop
+      - sublime text
+      - visual studio code
+      - default browser
+      - microsoft word
+      - microsoft excel
+      - microsoft powerpoint
+      - microsoft outlook
+      - microsoft teams
+      - microsoft edge
+      - adobe photoshop
+      - adobe illustrator
+      - adobe premiere
+      - adobe acrobat
+      - adobe xd
+      - visual studio
+      - android studio
+      - intellij idea
+      - pycharm
+      - code blocks
+      - code runner
+      - unity
+      - unreal engine
+      - steam
+      - epic games
+      - battle.net
+      - origin
+      - uplay
+      - file manager
+      - windows explorer
+      - mac finder
+      - xcode
+      - blender
+      - gimp
+      - inkscape
+      - krita
+      - vlc
+      - windows media player
+      - kmplayer
+      - potplayer
+      - zoom player
+      - notion
+      - onenote
+      - todoist
+      - evernote
+      - obs studio
+      - audacity
+      - davinci resolve
+      - cyberlink powerdirector
+      - camtasia
+      - lightroom
+      - xplayer
+      - vivaldi
+      - opera
+      - tor browser
+      - brave
+      - edge
+      - safari
+      - filezilla
+      - winscp
+      - teamviewer
+      - anydesk
+      - github desktop
+      - sourcetree
+      - postman
+      - insomnia
+      - docker
+      - kubectl
+      - customapp123
+      - superappx
+      - mybrowserx
+      - smartedit pro
+      - appplayer 42
+      - megaeditor x
+      - zedit plus
+      - ultrabrowser
+      - virtual desktop
+      - office hub
+
