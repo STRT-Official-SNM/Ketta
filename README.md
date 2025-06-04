@@ -225,4 +225,4 @@ Contributions are welcome! Please feel free to submit pull requests or open issu
 
 (Specify your chosen license here, e.g., MIT, Apache 2.0. If unsure, MIT is a common choice for open-source projects.)
 Example:
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+This project is licensed under the GNU GPLv3 License - see the [LICENSE.md](LICENSE.md) file for details.
