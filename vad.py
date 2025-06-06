@@ -10,151 +10,165 @@ import requests
 import json
 import uuid
 import pygame
+import numpy as np
+import socket
+
+# Import the command sender to control the UI
+from control import send_command
+
+# Configuration for sending loudness data
+LOUDNESS_HOST = "127.0.0.1"
+LOUDNESS_UDP_PORT = 45455 # Must match the port in app.py
+SENSITIVITY = 500.0       # Microphone sensitivity for loudness calculation
 
 def main():
+    # Audio format settings
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
     RATE = 16000
     CHUNK_DURATION_MS = 30
-    PADDING_DURATION_MS = 5000
+    PADDING_DURATION_MS = 1500 # Reduced padding
     CHUNK_SIZE = int(RATE * CHUNK_DURATION_MS / 1000)
-    CHUNK_BYTES = CHUNK_SIZE * 2
     NUM_PADDING_CHUNKS = int(PADDING_DURATION_MS / CHUNK_DURATION_MS)
-    NUM_WINDOW_CHUNKS = int(240 / CHUNK_DURATION_MS)
-    NUM_WINDOW_CHUNKS_END = NUM_WINDOW_CHUNKS * 2
+    
+    # VAD aggressiveness (0-3)
+    vad = webrtcvad.Vad(3)
 
-    vad = webrtcvad.Vad(1)
-
-    pygame.mixer.pre_init(RATE, -16, CHANNELS, 2048)
-    pygame.mixer.init()
-    pygame.init()
-
+    # PyAudio setup
     pa = pyaudio.PyAudio()
     stream = pa.open(format=FORMAT,
                      channels=CHANNELS,
                      rate=RATE,
                      input=True,
-                     start=False,
                      frames_per_buffer=CHUNK_SIZE)
 
-    def normalize(snd_data):
-        MAXIMUM = 32767
-        times = float(MAXIMUM) / max(abs(i) for i in snd_data)
-        r = array('h', (int(i * times) for i in snd_data))
-        return r
+    # UDP socket for sending loudness
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    try:
-        ring_buffer = collections.deque(maxlen=NUM_PADDING_CHUNKS)
-        triggered = False
-        ring_buffer_flags = [0] * NUM_WINDOW_CHUNKS
-        ring_buffer_index = 0
-        ring_buffer_flags_end = [0] * NUM_WINDOW_CHUNKS_END
-        ring_buffer_index_end = 0
-        raw_data = array('h')
-        index = 0
-        start_point = 0
-        StartTime = time.time()
-        got_a_sentence = False
-
-        print("* recording: ")
-        stream.start_stream()
-
-        while not got_a_sentence:
-            chunk = stream.read(CHUNK_SIZE)
-            raw_data.extend(array('h', chunk))
-            index += CHUNK_SIZE
-            TimeUse = time.time() - StartTime
-
-            active = vad.is_speech(chunk, RATE)
-
-            sys.stdout.write('1' if active else '_')
-            sys.stdout.flush()
-
-            ring_buffer_flags[ring_buffer_index] = 1 if active else 0
-            ring_buffer_index = (ring_buffer_index + 1) % NUM_WINDOW_CHUNKS
-
-            ring_buffer_flags_end[ring_buffer_index_end] = 1 if active else 0
-            ring_buffer_index_end = (ring_buffer_index_end + 1) % NUM_WINDOW_CHUNKS_END
-
-            if not triggered:
-                ring_buffer.append(chunk)
-                if sum(ring_buffer_flags) > 0.8 * NUM_WINDOW_CHUNKS:
-                    sys.stdout.write(' Open ')
-                    triggered = True
-                    start_point = index - CHUNK_SIZE * 20
-                    ring_buffer.clear()
-            else:
-                ring_buffer.append(chunk)
-                if sum(ring_buffer_flags_end) < 0.1 * NUM_WINDOW_CHUNKS_END or TimeUse > 10:
-                    sys.stdout.write(' Close ')
-                    triggered = False
-                    got_a_sentence = True
-
-        sys.stdout.write('\n')
-        stream.stop_stream()
-        print("* done recording")
-
-        # Trim beginning silence
-        raw_data.reverse()
-        for _ in range(start_point):
-            raw_data.pop()
-        raw_data.reverse()
-
-        raw_data = normalize(raw_data)
-
-        # Save to WAV
-        wf = wave.open("r.wav", 'w')
-        wf.setnchannels(CHANNELS)
-        wf.setsampwidth(2)
-        wf.setframerate(RATE)
-        wf.writeframesraw(raw_data)
-        wf.close()
-
-        # Transcribe and send to Rasa
+    # Ring buffer for VAD
+    ring_buffer = collections.deque(maxlen=NUM_PADDING_CHUNKS)
+    triggered = False
+    voiced_frames = []
+    
+    # --- Tell the UI to start its listening animation ---
+    print("Sending 'listening' command to UI...")
+    send_command("listening")
+    
+    print("Listening for speech...")
+    while not triggered:
+        chunk = stream.read(CHUNK_SIZE)
+        
+        # --- Calculate and send loudness regardless of speech ---
         try:
-            recognizer = sr.Recognizer()
-            with sr.AudioFile("r.wav") as source:
-                audio = recognizer.record(source)
-                text = recognizer.recognize_google(audio, language="en-IN")
-                print("Recognized:", text)
-                text = text.lower()
-
-                sender_id = str(uuid.uuid4())  # unique session id
-                rasa_url = "http://127.0.0.1:5005/webhooks/rest/webhook"
-                payload = {
-                    "sender": sender_id,
-                    "message": text
-                }
-
-                response = requests.post(rasa_url, json=payload)
-
-                if response.status_code == 200:
-                    messages = response.json()
-                    for msg in messages:
-                        if "text" in msg:
-                            print("Rasa:", msg["text"])
-                            with open('output.txt', 'w') as f:
-                                f.write(msg['text'])
-                        if "image" in msg:
-                            print("Rasa Image:", msg["image"])
-                else:
-                    print("Rasa connection failed:", response.status_code, response.text)
-
-        except sr.UnknownValueError:
-            print("Speech was not understood.")
+            np_data = np.frombuffer(chunk, dtype=np.int16)
+            rms = np.sqrt(np.mean(np_data.astype(np.float32)**2))
+            loudness = min(1.0, (rms / SENSITIVITY))
+            sock.sendto(str(loudness/1000000).encode('utf-8'), (LOUDNESS_HOST, LOUDNESS_UDP_PORT))
         except Exception as e:
-            print("Error during recognition or Rasa communication:", e)
+            print(f"Loudness calc/send error: {e}")
 
-        while pygame.mixer.get_busy():
-            pass
+        is_speech = vad.is_speech(chunk, RATE)
 
-    except KeyboardInterrupt:
-        print("Interrupted by user.")
+        sys.stdout.write('+' if is_speech else '-')
+        sys.stdout.flush()
 
+        if is_speech:
+            triggered = True
+            print("\nSpeech detected, recording...")
+            voiced_frames.extend(list(ring_buffer)) # Add pre-speech buffer
+            ring_buffer.clear()
+            voiced_frames.append(chunk)
+            break
+        else:
+            ring_buffer.append(chunk)
+
+    # Once triggered, record until silence
+    silence_start_time = None
+    while triggered:
+        chunk = stream.read(CHUNK_SIZE)
+        voiced_frames.append(chunk)
+
+        # --- Keep sending loudness during recording ---
+        np_data = np.frombuffer(chunk, dtype=np.int16)
+        rms = np.sqrt(np.mean(np_data.astype(np.float32)**2))
+        loudness = min(1.0, (rms / SENSITIVITY))
+        sock.sendto(str(loudness).encode('utf-8'), (LOUDNESS_HOST, LOUDNESS_UDP_PORT))
+
+        is_speech = vad.is_speech(chunk, RATE)
+        if not is_speech:
+            if silence_start_time is None:
+                silence_start_time = time.time()
+            elif time.time() - silence_start_time > 1.0: # 1 second of silence
+                triggered = False
+        else:
+            silence_start_time = None # Reset silence timer
+            
+    print("\nRecording finished.")
+    stream.stop_stream()
     stream.close()
     pa.terminate()
 
+    # --- Tell the UI to switch to the 'thinking' animation ---
+    print("Sending 'thinking' command to UI...")
+    send_command("thinking")
+    
+    # Send one last "zero" loudness value
+    sock.sendto(b'0.0', (LOUDNESS_HOST, LOUDNESS_UDP_PORT))
+    sock.close()
+
+    # Process the recorded audio
+    wav_data = b''.join(voiced_frames)
+
+    # Save to WAV (optional, but good for debugging)
+    with wave.open("last_recording.wav", 'wb') as wf:
+        wf.setnchannels(CHANNELS)
+        wf.setsampwidth(pa.get_sample_size(FORMAT))
+        wf.setframerate(RATE)
+        wf.writeframes(wav_data)
+
+    # Transcribe and send to Rasa
+    try:
+        recognizer = sr.Recognizer()
+        audio_data = sr.AudioData(wav_data, RATE, pa.get_sample_size(FORMAT))
+        
+        text = recognizer.recognize_google(audio_data, language="en-US")
+        print("Recognized:", text)
+
+        text = text.lower()
+
+        sender_id = str(uuid.uuid4())  # unique session id
+        rasa_url = "http://127.0.0.1:5005/webhooks/rest/webhook"
+        payload = {
+            "sender": sender_id,
+            "message": text
+        }
+
+        response = requests.post(rasa_url, json=payload)
+
+        if response.status_code == 200:
+            messages = response.json()
+            for msg in messages:
+                if "text" in msg:
+                    print("Rasa:", msg["text"])
+                    with open('output.txt', 'w') as f:
+                        f.write(msg['text'])
+                if "image" in msg:
+                    print("Rasa Image:", msg["image"])
+        else:
+            print("Rasa connection failed:", response.status_code, response.text)
+        
+    except sr.UnknownValueError:
+        print("Speech was not understood.")
+    except Exception as e:
+        print(f"Error during recognition or Rasa communication: {e}")
+    #finally:
+        #print("Sending 'reset' command to UI.")
+        #send_command("reset")
 
 if __name__ == "__main__":
-    main()
-
+    # This can be called from another script
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nInterrupted by user.")
+        send_command("reset") # Ensure UI resets on exit

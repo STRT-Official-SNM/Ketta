@@ -6,6 +6,7 @@ import time
 import vad # Assuming vad.py contains a main() function
 import threading
 import queue
+import control
 
 # --- Configuration ---
 MODEL_PATH = 'model.tflite'  # Replace with the path to your TFLite model
@@ -139,6 +140,7 @@ def process_audio_chunk(audio_data_raw):
             if predicted_class == '1 ketta': # Make sure '1 ketta' is exactly what's in your labels.txt
                 print(f"WAKEWORD DETECTED! ({predicted_class} - Confidence: {confidence:.2f})")
                 vad.main() # Call your VAD function
+                #control.send_command('speaking')
                 # Be cautious: if vad.main() is blocking or long-running,
                 # it might still make the main loop less responsive.
                 # Consider if vad.main() also needs to be non-blocking or run in a thread.

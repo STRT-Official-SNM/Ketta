@@ -8,6 +8,7 @@ import threading # Import the threading module
 import time # For the sleep function in the new thread
 from playsound import playsound
 import queue # Import queue for thread-safe communication
+import control
 
 # --- Configuration ---
 # IMPORTANT: Update these paths to match your setup!
@@ -85,17 +86,22 @@ def generate_audio_for_sentence(sentence_id, sentence, piper_exec, model, config
         print(f"An unexpected error occurred for sentence {sentence_id}: {e}")
         return None
 
-# --- New Thread Function ---
+# --- Modified Thread Function ---
 def playing_now_thread():
     """
     This thread continuously checks the queue for audio files to play.
+    It sends 'speaking' command before playing and 'reset' command after.
     It stops when the playback_finished_event is set and the queue is empty.
     """
     while not playback_finished_event.is_set() or not audio_playback_queue.empty():
         try:
             audio_file_path = audio_playback_queue.get(timeout=0.5) # Shorter timeout
             print(f"Playing: {audio_file_path}")
+            # Send 'speaking' command before playing
+            control.send_command('speaking')
             playsound(audio_file_path)
+            # Send 'reset' command after playing
+            control.send_command('reset')
             print(f"Finished playing: {audio_file_path}")
             audio_playback_queue.task_done()
         except queue.Empty:
