@@ -1,0 +1,34 @@
+language: en
+
+pipeline:
+  - name: WhitespaceTokenizer
+  - name: RegexFeaturizer
+  - name: LexicalSyntacticFeaturizer
+  - name: CountVectorsFeaturizer
+    analyzer: char_wb
+    min_ngram: 1
+    max_ngram: 4
+  - name: LanguageModelFeaturizer
+    model_name: "distilbert"
+    cache_dir: null
+  - name: DIETClassifier
+    epochs: 150
+    constrain_similarities: true
+    entity_recognition: true
+    intent_classification: true
+    BILOU_flag: true
+    intent_tokenization_flag: false
+  - name: EntitySynonymMapper
+  - name: ResponseSelector
+    epochs: 100
+    retrieval_intent: null
+
+policies:
+  - name: MemoizationPolicy
+  - name: RulePolicy
+  - name: UnexpecTEDIntentPolicy
+    max_history: 5
+    epochs: 100
+
+assistant_id: 20250527-164315-small-bassoon
+

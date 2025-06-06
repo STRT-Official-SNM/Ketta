@@ -1,0 +1,3 @@
+0 Background Noise
+1 ketta
+2 speaking_noise
