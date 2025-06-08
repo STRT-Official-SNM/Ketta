@@ -1,212 +1,215 @@
+# tts_audio_player.py
+
 import subprocess
-import os
+import os, sys
 import concurrent.futures
-from pydub import AudioSegment # Still needed for potential future use or if you add playback
-import shutil # For creating directories
-import re # For manual sentence splitting
-import threading # Import the threading module
-import time # For the sleep function in the new thread
-from playsound import playsound
-import queue # Import queue for thread-safe communication
+import shutil
+import re
+import threading
+import time
+import queue
+import socket
 import control
 
 # --- Configuration ---
-# IMPORTANT: Update these paths to match your setup!
-# Path to the Piper executable (e.g., 'piper' on Linux/macOS, 'piper.exe' on Windows)
-PIPER_EXECUTABLE_PATH = 'piper' # Example: adjust this to your actual path
-
-# Path to your downloaded ONNX model file (e.g., 'en_US-lessac-medium.onnx')
-# Assuming model files are in the same directory as the script
+PIPER_EXECUTABLE_PATH = 'piper'
 MODEL_PATH = './tts/en_US-hfc_female-medium.onnx'
-
-# Path to your downloaded model's config file (e.g., 'en_US-lessac-medium.onnx.json')
-# Assuming model files are in the same directory as the script
 CONFIG_PATH = './tts/en_US-hfc_female-medium.onnx.json'
-
-# Directory to store individual audio files for each sentence
 OUTPUT_INDIVIDUAL_AUDIO_DIR = 'audio'
+MAX_WORKERS = 4
+# This is the dedicated port this script will LISTEN on.
+TTS_COMMAND_UDP_PORT = 45456
 
-# Maximum number of concurrent TTS processes. Adjust based on your CPU cores and system resources.
-MAX_WORKERS = 4 # A good starting point is usually the number of CPU cores.
-
-# --- Global Queue for Playback ---
-# This queue will hold the paths of audio files ready for playback.
+# --- Global State ---
 audio_playback_queue = queue.Queue()
-# An event to signal the playback thread to stop when all files are generated and played.
-playback_finished_event = threading.Event() # This event will now be used to signal the *end of the program*
+# --- REMOVED: playback_finished_event was causing the thread to die. ---
+current_playback_process = None # Holds the current ffplay process
+# This new event will signal the generation process to stop.
+generation_stop_event = threading.Event()
 
-# --- Helper Functions ---
 
+# --- Helper Functions (Unchanged) ---
 def split_text_into_sentences(text):
-    """
-    Splits the given text into a list of sentences using a manual, rule-based approach.
-    This method looks for common sentence-ending punctuation followed by whitespace.
-    """
     sentences = re.split(r'(?<=[.!?])\s+', text)
     return [s.strip() for s in sentences if s.strip()]
 
 def generate_audio_for_sentence(sentence_id, sentence, piper_exec, model, config, output_dir):
-    """
-    Generates audio for a single sentence using Piper TTS.
-    Returns the path to the generated audio file.
-    """
     os.makedirs(output_dir, exist_ok=True)
     output_filepath = os.path.join(output_dir, f"s_{sentence_id}.wav")
-    print(f"Generating audio for sentence {sentence_id}: '{sentence[:50]}...'")
-
     try:
-        command = [
-            piper_exec,
-            '-m', model,
-            '-c', config,
-            '-f', output_filepath
-        ]
-        result = subprocess.run(
-            command,
-            input=sentence,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        if result.stderr:
-            print(f"Piper TTS stderr for sentence {sentence_id}: {result.stderr}")
-        print(f"Finished generating audio for sentence {sentence_id} to {output_filepath}")
+        command = [piper_exec, '-m', model, '-c', config, '-f', output_filepath]
+        result = subprocess.run(command, input=sentence, capture_output=True, text=True, check=True, timeout=60)
         return output_filepath
-    except FileNotFoundError:
-        print(f"Error: Piper executable not found at '{piper_exec}'. Please check the path.")
-        return None
-    except subprocess.CalledProcessError as e:
-        print(f"Error generating audio for sentence {sentence_id}: {e}")
-        print(f"Command: {' '.join(e.cmd)}")
-        print(f"Return Code: {e.returncode}")
-        print(f"Stdout: {e.stdout}")
-        print(f"Stderr: {e.stderr}")
-        return None
     except Exception as e:
-        print(f"An unexpected error occurred for sentence {sentence_id}: {e}")
+        print(f"An error occurred generating audio for sentence {sentence_id}: {e}")
         return None
 
-# --- Modified Thread Function ---
-def playing_now_thread():
-    """
-    This thread continuously checks the queue for audio files to play.
-    It sends 'speaking' command before playing and 'reset' command after.
-    It stops when the playback_finished_event is set and the queue is empty.
-    """
-    while not playback_finished_event.is_set() or not audio_playback_queue.empty():
-        try:
-            audio_file_path = audio_playback_queue.get(timeout=0.5) # Shorter timeout
-            print(f"Playing: {audio_file_path}")
-            # Send 'speaking' command before playing
-            control.send_command('speaking')
-            playsound(audio_file_path)
-            # Send 'reset' command after playing
-            control.send_command('reset')
-            print(f"Finished playing: {audio_file_path}")
-            audio_playback_queue.task_done()
-        except queue.Empty:
-            # If the queue is empty, and the main loop isn't finished yet,
-            # just wait a bit and check again.
-            if not playback_finished_event.is_set():
-                time.sleep(0.1)
-            else:
-                # If playback_finished_event is set and queue is empty,
-                # then we can exit the loop.
-                pass
-        except Exception as e:
-            print(f"Error playing audio file: {e}")
-            if 'audio_file_path' in locals():
-                audio_playback_queue.task_done()
-    print("Playback thread: Exiting.")
+# --- Threading Functions ---
+def command_listener_thread():
+    """Listens for UDP commands and controls both playback and generation."""
+    global current_playback_process
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.bind(('localhost', TTS_COMMAND_UDP_PORT))
+        print(f"TTS script listening for commands on UDP port {TTS_COMMAND_UDP_PORT}")
+        while True:
+            data, _ = sock.recvfrom(1024)
+            command = data.decode('utf-8').strip()
+            if command == 'stop_audio':
+                print("Received 'stop_audio' command. Halting generation and playback.")
+                # 1. Signal all processes to stop
+                generation_stop_event.set()
 
+                # 2. Clear the input file to prevent re-processing
+                with open('output.txt', 'w') as f: f.write('')
+
+                # 3. Terminate any current audio playback
+                if current_playback_process and current_playback_process.poll() is None:
+                    print("Terminating current audio process...")
+                    current_playback_process.terminate()
+                    current_playback_process = None
+                
+                # --- CHANGE START: Robustly clear the queue ---
+                # This ensures that queue.join() in the main thread will not block.
+                print("Clearing audio playback queue...")
+                while not audio_playback_queue.empty():
+                    try:
+                        audio_playback_queue.get_nowait()
+                        audio_playback_queue.task_done() # CRITICAL: Signal that the task is done
+                    except queue.Empty:
+                        break
+                # --- CHANGE END ---
+                
+                # 4. Tell the UI to go back to its idle state
+                control.send_ui_command('reset')
+
+
+def playing_now_thread():
+    """A persistent worker thread that plays audio from the queue."""
+    global current_playback_process
+    # --- CHANGE: This thread should run forever, waiting for work.
+    while True:
+        try:
+            # This will block until an item is available.
+            audio_file_path = audio_playback_queue.get()
+            
+            # If a stop was triggered, just throw away the item and continue.
+            if generation_stop_event.is_set():
+                audio_playback_queue.task_done()
+                continue
+
+            control.send_ui_command('speaking')
+            try:
+                current_playback_process = subprocess.Popen(
+                    ['ffplay', '-nodisp', '-autoexit', '-loglevel', 'quiet', audio_file_path],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                current_playback_process.wait()
+            except FileNotFoundError:
+                print("\n\nERROR: 'ffplay' command not found. Please install FFmpeg.\n\n")
+                # Can't recover from this, so we exit the thread.
+                return
+            finally:
+                current_playback_process = None
+
+            audio_playback_queue.task_done() # Signal that this item is processed.
+            
+            # --- CHANGE: This logic now belongs in the main loop.
+            # if audio_playback_queue.empty():
+            #     control.send_ui_command('reset')
+        except Exception as e:
+            # This thread should be robust.
+            print(f"Error in playback thread: {e}")
 
 # --- Main Execution ---
-
 def main():
     input_file_name = 'output.txt'
-    
-    playing_thread = threading.Thread(target=playing_now_thread)
-    playing_thread.daemon = True
+
+    # Start helper threads
+    cmd_listener = threading.Thread(target=command_listener_thread, daemon=True)
+    cmd_listener.start()
+    playing_thread = threading.Thread(target=playing_now_thread, daemon=True)
     playing_thread.start()
-    print("Started 'playing now' thread.")
+    print("Started 'playing now' and 'command listener' threads.")
 
     while True:
+        # Reset event for the new loop
+        generation_stop_event.clear()
+
         print(f"\nMonitoring '{input_file_name}' for new content...")
-        
         input_text = ""
         while True:
+            # Also check for stop event while waiting for the file
+            if generation_stop_event.is_set(): break
             if os.path.exists(input_file_name):
-                with open(input_file_name, 'r') as f:
+                with open(input_file_name, 'r', encoding='utf-8') as f:
                     current_text = f.read().strip()
                 if current_text:
                     input_text = current_text
-                    print(f"New content found in '{input_file_name}'.")
                     break
-            time.sleep(1) # Check every 1 second
+            time.sleep(1)
 
-        # Process the new content
+        if generation_stop_event.is_set():
+            print("Skipping processing due to stop signal.")
+            continue
+
         if input_text:
-            # 1. Create the output directory for individual audio files
-            # Clear it before processing new input to avoid clutter from previous runs
             if os.path.exists(OUTPUT_INDIVIDUAL_AUDIO_DIR):
                 shutil.rmtree(OUTPUT_INDIVIDUAL_AUDIO_DIR)
             os.makedirs(OUTPUT_INDIVIDUAL_AUDIO_DIR, exist_ok=True)
-            print(f"Created output directory for individual audios: {OUTPUT_INDIVIDUAL_AUDIO_DIR}")
-
-            # 2. Split input text into sentences
             sentences = split_text_into_sentences(input_text)
             if not sentences:
-                print("No sentences found or error in splitting text for the current input. Skipping.")
-                # Clear the file even if no sentences were found to prevent re-processing
-                with open(input_file_name, 'w') as f:
-                    f.write('')
-                continue # Go back to the top of the while True loop
+                with open(input_file_name, 'w') as f: f.write('')
+                continue
 
-            print(f"\nSplit text into {len(sentences)} sentences.")
-
-            # 3. Generate audio for each sentence in parallel
-            futures = {}
+            generated_paths = {}
             with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                for i, sentence in enumerate(sentences):
-                    future = executor.submit(
-                        generate_audio_for_sentence,
-                        i, sentence,
-                        PIPER_EXECUTABLE_PATH, MODEL_PATH, CONFIG_PATH, OUTPUT_INDIVIDUAL_AUDIO_DIR
-                    )
-                    futures[i] = future
+                future_to_id = {
+                    executor.submit(generate_audio_for_sentence, i, sentence,
+                        PIPER_EXECUTABLE_PATH, MODEL_PATH, CONFIG_PATH, OUTPUT_INDIVIDUAL_AUDIO_DIR): i
+                    for i, sentence in enumerate(sentences)
+                }
 
-                # Add generated audio paths to the playback queue in order
+                for future in concurrent.futures.as_completed(future_to_id):
+                    if generation_stop_event.is_set():
+                        print("Stop signal received. Cancelling remaining generation tasks.")
+                        for f in future_to_id: f.cancel()
+                        break 
+
+                    sentence_id = future_to_id[future]
+                    try:
+                        audio_path = future.result()
+                        if audio_path:
+                            generated_paths[sentence_id] = audio_path
+                    except Exception as exc:
+                        print(f'Sentence {sentence_id} generated an exception: {exc}')
+
+            # Only queue audio if generation was NOT interrupted
+            if not generation_stop_event.is_set():
+                print("Generation complete. Queueing files for playback.")
                 for i in range(len(sentences)):
-                    if i in futures:
-                        try:
-                            audio_path = futures[i].result()
-                            if audio_path:
-                                audio_playback_queue.put(audio_path)
-                            else:
-                                print(f"Skipping playback for sentence {i} due to generation error.")
-                        except Exception as exc:
-                            print(f'Sentence {i} generation raised an exception: {exc}')
-                            print(f"Skipping playback for sentence {i} due to exception.")
-                    else:
-                        print(f"Warning: Future for sentence {i} not found. This should not happen.")
+                    if i in generated_paths:
+                        audio_playback_queue.put(generated_paths[i])
+                
+                # This now correctly waits for the persistent playback thread to finish all items.
+                audio_playback_queue.join() 
+                
+                # Check again in case a stop command came during playback.
+                if not generation_stop_event.is_set():
+                     print("\n--- All audio finished playing. ---")
+                     control.send_ui_command('reset') # Send reset here
+                     time.sleep(1) # Give a moment before hiding
+                     control.send_ui_command('hide')
+                else:
+                     print("\n--- Playback was interrupted. ---")
+            else:
+                print("\n--- Generation was interrupted. Playback aborted. ---")
             
-            print("\nAll audio generation tasks for the current input completed and results added to playback queue.")
+            with open(input_file_name, 'w') as f: f.write('')
 
-            # 4. Clear the input file after processing
-            with open(input_file_name, 'w') as f:
-                f.write('')
-            print(f"Cleared '{input_file_name}' for next input.")
-        else:
-            print(f"'{input_file_name}' is empty. Waiting for content...")
-        
-        # Add a small delay before checking for new input again
-        time.sleep(2) # Adjust as needed
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
         print("\nProgram interrupted by user. Shutting down...")
-        playback_finished_event.set() # Signal playback thread to stop
-        # The daemon thread will exit with the main program.
-        # If it were not a daemon thread, you'd need playing_thread.join() here.
+        generation_stop_event.set()

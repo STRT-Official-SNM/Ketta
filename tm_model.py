@@ -139,8 +139,8 @@ def process_audio_chunk(audio_data_raw):
             # print(f"Detected: {predicted_class} (Confidence: {confidence:.2f})")
             if predicted_class == '1 ketta': # Make sure '1 ketta' is exactly what's in your labels.txt
                 print(f"WAKEWORD DETECTED! ({predicted_class} - Confidence: {confidence:.2f})")
+                control.send_ui_command('show')
                 vad.main() # Call your VAD function
-                #control.send_command('speaking')
                 # Be cautious: if vad.main() is blocking or long-running,
                 # it might still make the main loop less responsive.
                 # Consider if vad.main() also needs to be non-blocking or run in a thread.

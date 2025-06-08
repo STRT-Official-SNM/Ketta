@@ -12,9 +12,10 @@ import uuid
 import pygame
 import numpy as np
 import socket
+from gpytranslate import SyncTranslator
 
 # Import the command sender to control the UI
-from control import send_command
+from control import send_ui_command
 
 # Configuration for sending loudness data
 LOUDNESS_HOST = "127.0.0.1"
@@ -52,7 +53,7 @@ def main():
     
     # --- Tell the UI to start its listening animation ---
     print("Sending 'listening' command to UI...")
-    send_command("listening")
+    send_ui_command("listening")
     
     print("Listening for speech...")
     while not triggered:
@@ -110,7 +111,7 @@ def main():
 
     # --- Tell the UI to switch to the 'thinking' animation ---
     print("Sending 'thinking' command to UI...")
-    send_command("thinking")
+    send_ui_command("thinking")
     
     # Send one last "zero" loudness value
     sock.sendto(b'0.0', (LOUDNESS_HOST, LOUDNESS_UDP_PORT))
@@ -133,8 +134,11 @@ def main():
         
         text = recognizer.recognize_google(audio_data, language="en-US")
         print("Recognized:", text)
-
+        #t = SyncTranslator()
+        #trans = t.translate(text, targetlang="en")
+        #text=trans.text
         text = text.lower()
+        print('Translation: ',text)
 
         sender_id = str(uuid.uuid4())  # unique session id
         rasa_url = "http://127.0.0.1:5005/webhooks/rest/webhook"
@@ -159,11 +163,12 @@ def main():
         
     except sr.UnknownValueError:
         print("Speech was not understood.")
+        with open('output.txt', 'w') as f:
+            f.write("Sorry! I couldn't understand what you just said")
     except Exception as e:
         print(f"Error during recognition or Rasa communication: {e}")
     #finally:
         #print("Sending 'reset' command to UI.")
-        #send_command("reset")
 
 if __name__ == "__main__":
     # This can be called from another script
@@ -171,4 +176,4 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("\nInterrupted by user.")
-        send_command("reset") # Ensure UI resets on exit
+        send_ui_command("reset") # Ensure UI resets on exit

@@ -3,89 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KEtta</title>
+    <title>Orb</title>
     <style>
-        body {
+        body, html {
             margin: 0;
+            overflow: hidden; /* Prevent scrollbars */
             background-color: transparent;
-            color: #fff;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
-                Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            cursor: pointer; /* Change cursor to indicate it's clickable */
         }
+
         #siri-container {
-            width: 80vw;
-            height: 50vh;
-            max-width: 600px;
-            max-height: 400px;
-        }
-        .controls {
-            margin-top: 20px;
-            display: flex;
-            gap: 10px;
-        }
-        button {
-            background-color: #333;
-            border: 1px solid #555;
-            color: #fff;
-            padding: 10px 20px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background-color 0.2s;
-        }
-        button:hover {
-            background-color: #444;
-        }
-        button.active {
-            background-color: #007aff;
-            border-color: #007aff;
-        }
-        p {
-            max-width: 600px;
-            text-align: center;
-            color: #888;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
         }
     </style>
 </head>
 <body>
-
-    <h1>Siri-like Audio Orb (Remote Control)</h1>
-    <p>The orb's state is now controlled by an external Python script. The listening animation is driven by a live audio stream from the VAD script.</p>
-    
+    <!-- The orb will be rendered inside this container -->
     <div id="siri-container"></div>
 
-    <div class="controls">
-        <button id="thinkBtn">Simulate Thinking</button>
-        <button id="speakBtn">Simulate Speaking</button>
-        <button id="resetBtn">Reset to Idle</button>
-    </div>
-
-    <!-- Import Three.js -->
+    <!-- Required libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- Simplex Noise for organic motion -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
+    
+    <!-- No extra JS library for communication is needed -->
 
     <script>
-        // --- Basic Setup ---
+        // --- 1. Click Handler to Signal Python ---
+        document.body.addEventListener('click', () => {
+            // "Navigate" to our custom URL. The Python host will intercept this.
+            window.location.href = "ketta-signal://click";
+        });
+
+
+        // --- 2. Three.js Orb Visualization ---
         const container = document.getElementById('siri-container');
         let scene, camera, renderer, sphere, uniforms, clock;
         const simplex = new SimplexNoise();
 
-        // --- State Management ---
-        let currentModeName = 'idle';
-        let targetMode = 0.0; 
-        let currentMode = 0.0; 
+        // State Management
+        let targetMode = 0.0;
+        let currentMode = 0.0;
         const TRANSITION_SPEED = 0.04;
-        let currentLoudness = 0.0; // NEW: This will be updated by the WebSocket
+        let currentLoudness = 0.0; // Updated by the WebSocket
 
-        // --- Shader Code (The magic happens here) ---
-        // UNCHANGED from original, so it is omitted here for brevity.
+        // Shader Code
         const vertexShader = `
             uniform float u_time;
             uniform float u_loudness;
@@ -196,9 +163,7 @@
             uniforms.u_mode.value = currentMode;
             uniforms.u_time.value = elapsedTime;
 
-            // Smoothly update loudness based on the value from the WebSocket
             let targetLoudness = 0.0;
-            // Only apply loudness if we are in or near the 'listening' mode
             if (currentMode > 0.5 && currentMode < 1.5) {
                 targetLoudness = currentLoudness;
             }
@@ -209,53 +174,32 @@
             renderer.render(scene, camera);
         }
         
-        // --- Control Logic ---
-        const thinkBtn = document.getElementById('thinkBtn');
-        const speakBtn = document.getElementById('speakBtn');
-        const resetBtn = document.getElementById('resetBtn');
-        const allButtons = [thinkBtn, speakBtn, resetBtn];
-
-        function setActiveButton(activeBtnId) {
-            allButtons.forEach(btn => btn.classList.remove('active'));
-            const activeBtn = document.getElementById(activeBtnId);
-            if (activeBtn) {
-                activeBtn.classList.add('active');
-            }
-        }
-
+        // --- 3. External Control and Data Functions ---
+        
+        // This is called by the Python app via UDP commands to change the orb's state.
         function setMode(modeName) {
-            currentModeName = modeName;
             switch(modeName) {
                 case 'listening':
                     targetMode = 1.0;
-                    // No button for listening anymore, state is set externally
                     break;
                 case 'thinking':
                     targetMode = 2.0;
-                    setActiveButton('thinkBtn');
                     break;
                 case 'speaking':
                     targetMode = 3.0;
-                    setActiveButton('speakBtn');
                     break;
                 case 'reset':
                 default:
                     targetMode = 0.0;
-                    setActiveButton('resetBtn');
                     break;
             }
         }
-
-        thinkBtn.addEventListener('click', () => setMode('thinking'));
-        speakBtn.addEventListener('click', () => setMode('speaking'));
-        resetBtn.addEventListener('click', () => setMode('reset'));
         
-        // --- WebSocket Connection for Loudness ---
+        // WebSocket Connection for Loudness Data
         function connectWebSocket() {
             const ws = new WebSocket('ws://localhost:8765');
 
             ws.onmessage = (event) => {
-                // The WebSocket sends loudness values as strings
                 const loudness = parseFloat(event.data);
                 if (!isNaN(loudness)) {
                     currentLoudness = loudness;
@@ -267,22 +211,20 @@
             };
 
             ws.onclose = () => {
-                console.log('WebSocket connection closed. Attempting to reconnect in 3 seconds...');
-                // Reset loudness to 0 when connection is lost
-                currentLoudness = 0;
+                console.log('WebSocket connection closed. Reconnecting in 3s...');
+                currentLoudness = 0; // Reset loudness when connection is lost
                 setTimeout(connectWebSocket, 3000);
             };
 
             ws.onerror = (error) => {
                 console.error('WebSocket error:', error);
-                ws.close();
+                ws.close(); // This will trigger the onclose event and reconnection logic
             };
         }
 
-        // Start the application
+        // --- 4. Start the application ---
         init();
         connectWebSocket();
-        setMode('reset');
 
     </script>
 </body>
