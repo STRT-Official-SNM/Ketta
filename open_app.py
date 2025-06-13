@@ -3,6 +3,7 @@ import subprocess
 import configparser
 import shutil
 import difflib
+import control
 
 def get_app_data_from_desktop_file(filepath):
     config = configparser.ConfigParser(interpolation=None)
@@ -83,6 +84,7 @@ def launch_application_by_name(app_name):
             matched_name = close_matches[0]
             app_info = apps[matched_name]
             print(f"Matched input '{app_name}' to '{app_info['name']}'")
+            control.send_ui_command('hide')
 
     if not app_info:
         print(f"App '{app_name}' not found.")
